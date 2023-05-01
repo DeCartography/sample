@@ -4,7 +4,6 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
-# TODO: Replace this with your actual list of addresses
 addresses = [
     '0x1f96522d02e1c11ca6e12cc51635fba12a8f7807', '0x241e82c79452f51fbfc89fac6d912e021db1a3b7',
     '0x09cabec1ead1c0ba254b09efb3ee13841712be14', '0xcda84cc75ec5c92a5dacabc13241256beceef964',
@@ -18,7 +17,6 @@ addresses = [
     '0x8387dbf85230975a26909c1240f6aea7eb45f9f3', '0x09cabec1ead1c0ba254b09efb3ee13841712be14',
     '0x932348df588923ba3f1fd50593b22c4e2a287919', '0x979ff11dcbf3ac66a4d15a7b3a5b306ccbbef4e9'
 ]
-
 
 def worker_selection(addresses):
     random_addresses = random.sample(addresses, 9)
@@ -34,7 +32,7 @@ def worker_selection(addresses):
     chosen_addresses = [random_addresses[int(choice)] for choice in choices]
     return chosen_addresses
 
-n_workers = 10
+n_workers = 3
 n_sessions = 3
 votes_matrix = np.zeros((len(addresses), len(addresses)))
 
@@ -51,5 +49,18 @@ votes_pca = pca.fit_transform(votes_matrix)
 kmeans = KMeans(n_clusters=3, random_state=0)
 clusters = kmeans.fit_predict(votes_pca)
 
+clustered_addresses = {i+1: [] for i in range(max(clusters)+1)}
+
+for i, cluster in enumerate(clusters):
+    clustered_addresses[cluster+1].append(addresses[i])
+
+for cluster, addresses in clustered_addresses.items():
+    print(f"Cluster {cluster}: {addresses}")
+
+plt.figure(figsize=(10,10))
 plt.scatter(votes_pca[:, 0], votes_pca[:, 1], c=clusters)
+
+for i, txt in enumerate(addresses):
+    plt.annotate(txt, (votes_pca[i, 0], votes_pca[i, 1]))
+
 plt.show()
