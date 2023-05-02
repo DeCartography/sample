@@ -37,59 +37,103 @@ addresses = [
 
 def worker_selection(worker, addresses):
     random_addresses = random.sample(addresses, 9)
-    # Print the addresses for the worker to choose from.
+    print_addresses(random_addresses, worker)
+    chosen_addresses = get_choices(random_addresses)
+    worker.choices.extend(chosen_addresses)
+    return chosen_addresses
+
+def print_addresses(random_addresses, worker):
     print(f"{worker.name}, please choose 3 addresses from the following list by typing the corresponding numbers (separated by space):")
     for i, address in enumerate(random_addresses):
         print(f"{i}: {address}")
-    # Get the worker's choices.
+
+def get_choices(random_addresses):
     while True:
         choices = input().split()
-        # Make sure the worker's choices are valid.
         if all(0 <= int(choice) < 9 for choice in choices) and len(choices) == 3:
             break
         else:
             print("Invalid input. Please choose 3 addresses by typing the corresponding numbers (0-8) separated by space.")
-    # Add the worker's choices to their list of choices.
-    chosen_addresses = [random_addresses[int(choice)] for choice in choices]
-    worker.choices.extend(chosen_addresses)
+    return [random_addresses[int(choice)] for choice in choices]
+
+def worker_selection(worker, addresses):
+    chosen_addresses = random.choices(addresses, k=4)
+    while worker.address in chosen_addresses:
+        chosen_addresses = random.choices(addresses, k=4)
     return chosen_addresses
 
-n_sessions = 3 #number of sessions per worker
-votes_matrix = np.zeros((len(addresses), len(addresses)))
-worker_voting_power = {}
+def voting_matrix(workers, addresses):
+    n_sessions = 3 #number of sessions per worker
+    votes_matrix = np.zeros((len(addresses), len(addresses)))
+    worker_voting_power = {}
+    for worker in workers:
+        # Each worker votes n_sessions times
+        for _ in range(n_sessions):
+            # Select addresses to vote on
+            chosen_addresses = worker_selection(worker, addresses)
+            # Update the voting matrix
+            for address in chosen_addresses:
+                votes_matrix[addresses.index(address), [addresses.index(chosen) for chosen in chosen_addresses]] += worker.weight
+        # Print out the voting power of each worker
+        print(f"Profile: Humanity Score - {worker.humanity_score}, Staking Amount - {worker.staking_amount}, Voting Weight - {worker.weight}")
+        print(f"-------------")
+        print(f"{worker.name} has finished their task. Please pass it on to the next person.")
+        worker_voting_power[worker.name] = worker.weight * n_sessions
+    return votes_matrix, worker_voting_power
 
-for worker in workers:
-    for _ in range(n_sessions):
-        chosen_addresses = worker_selection(worker, addresses)
-        for address in chosen_addresses:
-            votes_matrix[addresses.index(address), [addresses.index(chosen) for chosen in chosen_addresses]] += worker.weight
-    print(f"Profile: Humanity Score - {worker.humanity_score}, Staking Amount - {worker.staking_amount}, Voting Weight - {worker.weight}")
-    print(f"-------------")
-    print(f"{worker.name} has finished their task. Please pass it on to the next person.")
-    worker_voting_power[worker.name] = worker.weight * n_sessions
-
+# Peer prediction: compute average match count for each worker
 def peer_prediction(workers):
     correlation_scores = []
+    # For each worker
     for worker in workers:
-        peers = [w for w in workers if w != worker]
-        match_counts = [len(set(worker.choices).intersection(set(peer.choices))) for peer in peers]
-        average_match_count = sum(match_counts) / len(match_counts)
+        # Find all the peers of the worker
+        peers = find_peers(workers, worker)
+        # Compute the match count for each peer
+        match_counts = compute_match_counts(worker, peers)
+        # Compute the average match count
+        average_match_count = compute_average_match_count(match_counts)
+        # Record the average match count
         correlation_scores.append(average_match_count)
         print("Average match count for worker {} is {}".format(worker.name, average_match_count))
     return correlation_scores
 
+def find_peers(workers, worker):
+    return [w for w in workers if w != worker]
+
+def compute_match_counts(worker, peers):
+    return [len(set(worker.choices).intersection(set(peer.choices))) for peer in peers]
+
+def compute_average_match_count(match_counts):
+    return sum(match_counts) / len(match_counts)
+
 def calculate_rewards(workers, correlation_scores, total_reward=100):
-    weighted_scores = [math.sqrt(worker.weight) * correlation_scores[i] for i, worker in enumerate(workers)]
+    # Calculate weighted scores
+    weighted_scores = calculate_weighted_scores(workers, correlation_scores)
     total_weighted_scores = sum(weighted_scores)
-    reward_ratios = [score / total_weighted_scores for score in weighted_scores]
-    rewards = [ratio * total_reward for ratio in reward_ratios]
+    # Calculate reward ratios
+    reward_ratios = calculate_reward_ratios(weighted_scores, total_weighted_scores)
+    # Calculate rewards
+    rewards = calculate_rewards(reward_ratios, total_reward)
     print("Rewards for workers: {}".format(rewards))
     return rewards
 
+def calculate_weighted_scores(workers, correlation_scores):
+    return [math.sqrt(worker.weight) * correlation_scores[i] for i, worker in enumerate(workers)]
+
+def calculate_reward_ratios(weighted_scores, total_weighted_scores):
+    return [score / total_weighted_scores for score in weighted_scores]
+
+def calculate_rewards(reward_ratios, total_reward):
+    return [ratio * total_reward for ratio in reward_ratios]
+
 def calculate_data(workers):
+    # Create a dictionary to store the data we want to calculate
     data = {"Worker Name": [], "Total Voting Power": [], "Average Match Count": [], "Reward Distribution (%)": []}
+
+    # Calculate the total voting power for each worker
     total_voting_power = {worker.name: worker.weight * n_sessions for worker in workers}
 
+    # Calculate the average number of matches for each worker
     correlation_scores = []
     for worker in workers:
         peers = [w for w in workers if w != worker]
@@ -98,6 +142,7 @@ def calculate_data(workers):
         correlation_scores.append(average_match_count)
         print("Average match count for worker {} is {}".format(worker.name, average_match_count))
 
+    # Calculate the reward distribution for each worker
     total_reward = 100
     weighted_scores = [math.sqrt(worker.weight) * correlation_scores[i] for i, worker in enumerate(workers)]
     total_weighted_scores = sum(weighted_scores)
@@ -105,6 +150,7 @@ def calculate_data(workers):
     rewards = [ratio * total_reward for ratio in reward_ratios]
     print("Rewards for workers: {}".format(rewards))
 
+    # Add the data for each worker to the dictionary
     for i, worker in enumerate(workers):
         data["Worker Name"].append(worker.name)
         data["Total Voting Power"].append(total_voting_power[worker.name])
@@ -123,30 +169,45 @@ df = pd.DataFrame(data)
 print(df)
 
 
-try:
-    correlation_scores = peer_prediction(workers)
-except:
-    correlation_scores = np.zeros((len(addresses), len(addresses)))
+# The workers are initialized by calling the initialize_workers function with the addresses
+# of the workers as an argument
+workers = initialize_workers(addresses)
 
+# The votes from the workers are collected by calling the collect_votes function with the
+# initialized workers as an argument
+votes_matrix = collect_votes(workers)
+
+# The correlation scores are calculated by calling the peer_prediction function with the
+# initialized workers as an argument
+correlation_scores = peer_prediction(workers)
+
+# The rewards are calculated by calling the calculate_rewards function with the initialized
+# workers and the calculated correlation scores as arguments
 calculate_rewards(workers, correlation_scores)
 
+# The votes are reduced to two dimensions by using principal component analysis (PCA)
 pca = PCA(n_components=2)
 votes_pca = pca.fit_transform(votes_matrix)
 
+# The votes are clustered into three clusters by using k-means clustering
 kmeans = KMeans(n_clusters=3, random_state=0)
 clusters = kmeans.fit_predict(votes_pca)
 
+# The addresses are added to the clustered_addresses dictionary
 clustered_addresses = {i+1: [] for i in range(max(clusters)+1)}
 
 for i, cluster in enumerate(clusters):
     clustered_addresses[cluster+1].append(addresses[i])
 
+# The clustered addresses are printed
 for cluster, addresses in clustered_addresses.items():
     print(f"Cluster {cluster}: {addresses}")
 
+# The votes are plotted with different colors for each cluster
 plt.figure(figsize=(10,10))
 plt.scatter(votes_pca[:, 0], votes_pca[:, 1], c=clusters)
 
+# The addresses are added to the plot
 for i, txt in enumerate(addresses):
     plt.annotate(txt, (votes_pca[i, 0], votes_pca[i, 1]))
 
